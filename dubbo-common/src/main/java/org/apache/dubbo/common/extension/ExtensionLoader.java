@@ -84,8 +84,10 @@ public class ExtensionLoader<T> {
 
     private static final Pattern NAME_SEPARATOR = Pattern.compile("\\s*[,]+\\s*");
 
+    //Dubbo 中一个扩展接口对应一个 ExtensionLoader 实例，该集合缓存了全部 ExtensionLoader 实例，其中的 Key 为扩展接口，Value 为加载其扩展实现的 ExtensionLoader 实例。
     private static final ConcurrentMap<Class<?>, ExtensionLoader<?>> EXTENSION_LOADERS = new ConcurrentHashMap<>(64);
 
+    //该集合缓存了扩展实现类与其实例对象的映射关系。在前文示例中，Key 为 Class，Value 为 DubboProtocol 对象。
     private static final ConcurrentMap<Class<?>, Object> EXTENSION_INSTANCES = new ConcurrentHashMap<>(64);
 
     // 当前 ExtensionLoader 实例负责加载扩展接口
@@ -99,6 +101,7 @@ public class ExtensionLoader<T> {
     //缓存了该 ExtensionLoader 加载的扩展名与扩展实现类之间的映射关系。cachedNames 集合的反向关系缓存。
     private final Holder<Map<String, Class<?>>> cachedClasses = new Holder<>();
 
+    //键为类简单名，值为@Activate注解对象，确实上一层那里还是扩展实现类的class对象，然后getAnnotation了
     private final Map<String, Object> cachedActivates = new ConcurrentHashMap<>();
 
     // 缓存了该 ExtensionLoader 加载的扩展名与扩展实现对象之间的映射关系。
@@ -115,6 +118,9 @@ public class ExtensionLoader<T> {
 
     private Map<String, IllegalStateException> exceptions = new ConcurrentHashMap<>();
 
+    //LoadingStrategy 接口有三个实现（通过 JDK SPI 方式加载的），
+    // 分别对应前面介绍的三个 Dubbo SPI 配置文件所在的目录，且都继承了 Prioritized 这个优先级接口，
+    // 默认优先级：DubboInternalLoadingStrategy > DubboLoadingStrategy > ServicesLoadingStrategy
     private static volatile LoadingStrategy[] strategies = loadLoadingStrategies();
 
     public static void setLoadingStrategies(LoadingStrategy... strategies) {
@@ -268,7 +274,7 @@ public class ExtensionLoader<T> {
         List<T> activateExtensions = new ArrayList<>();
         // values就是扩展名
         List<String> names = values == null ? new ArrayList<>(0) : asList(values);
-        if (!names.contains(REMOVE_VALUE_PREFIX + DEFAULT_KEY)) { // ---1
+        if (!names.contains(REMOVE_VALUE_PREFIX + DEFAULT_KEY)) { // ---1  '-default'
             getExtensionClasses(); // 触发cachedActivates等缓存字段的加载
             for (Map.Entry<String, Object> entry : cachedActivates.entrySet()) {
                 String name = entry.getKey(); // 扩展名
@@ -660,6 +666,9 @@ public class ExtensionLoader<T> {
             injectExtension(instance); // --- 3
 
             // 自动包装扩展实现对象。这里涉及到 Wrapper 类以及自动包装特性的相关内容，本课时后面会进行详细介绍。
+            // 许多扩展类的相同逻辑，不用全都写一遍，于是将公共逻辑放入Wrapper中。当得知是需要wrapper时，
+            // 直接：instance = injectExtension((T) wrapperClass.getConstructor(type).newInstance(instance));
+            // 这样直接拿到包装类的构造器来新建一个对象，太优雅了。而wrapperClass早在第一步loadExtension的时候就已经缓存过了。
             Set<Class<?>> wrapperClasses = cachedWrapperClasses; // --- 4
             if (CollectionUtils.isNotEmpty(wrapperClasses)) {
                 for (Class<?> wrapperClass : wrapperClasses) {
@@ -681,6 +690,7 @@ public class ExtensionLoader<T> {
 
     private T injectExtension(T instance) {
 
+        //我暂时理解这个objectFactory有点类似于spring的上下文，他那个getBean的逻辑
         if (objectFactory == null) { // 检测objectFactory字段
             return instance;
         }
@@ -705,9 +715,12 @@ public class ExtensionLoader<T> {
                     // 根据setter方法的名称确定属性名称
                     String property = getSetterProperty(method);
                     // 加载并实例化扩展实现类
+                    // 这里是自动装配，感觉有点像spring的自动装配了，例如在创建ABean的时候发现需要BBean，而且缓存里面没有BBean，那么我
+                    // 就去转而创建BBean，等BBean创建好了再回来继续创建ABean
                     Object object = objectFactory.getExtension(pt, property);
                     if (object != null) {
                         // 调用setter方法进行装配
+                        // setter方法也应该是(instance, object)的形式。
                         method.invoke(instance, object);
                     }
                 } catch (Exception e) {
@@ -925,13 +938,15 @@ public class ExtensionLoader<T> {
                     throw new IllegalStateException("No such extension name for the class " + clazz.getName() + " in the config " + resourceURL);
                 }
             }
-
+            // 兜底:SPI配置文件中未指定扩展名称，则用类的简单名称作为扩展名(略)
             String[] names = NAME_SEPARATOR.split(name);
             if (ArrayUtils.isNotEmpty(names)) {
                 // 将包含@Activate注解的实现类缓存到cachedActivates集合中
                 cacheActivateClass(clazz, names[0]);
                 for (String n : names) {
+                    // 在cachedNames集合中缓存实现类->扩展名的映射
                     cacheName(clazz, n);
+                    // 在cachedClasses集合中缓存扩展名->实现类的映射
                     saveInExtensionClass(extensionClasses, clazz, n, overridden);
                 }
             }
