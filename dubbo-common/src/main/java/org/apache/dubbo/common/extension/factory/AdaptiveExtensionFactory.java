@@ -30,8 +30,10 @@ import java.util.List;
 @Adaptive
 public class AdaptiveExtensionFactory implements ExtensionFactory {
 
+    //所有的工厂都缓存在这咯.说是所有,其实就两个,spi和spring;spi在前,spring在后;
     private final List<ExtensionFactory> factories;
 
+    //spi在前,spring在后;
     public AdaptiveExtensionFactory() {
         ExtensionLoader<ExtensionFactory> loader = ExtensionLoader.getExtensionLoader(ExtensionFactory.class);
         List<ExtensionFactory> list = new ArrayList<ExtensionFactory>();
@@ -41,6 +43,7 @@ public class AdaptiveExtensionFactory implements ExtensionFactory {
         factories = Collections.unmodifiableList(list);
     }
 
+    //获取拓展实际上都是调用的工厂的get方法,理解为AdaptiveExtensionFactory保存了所有的工厂
     @Override
     public <T> T getExtension(Class<T> type, String name) {
         for (ExtensionFactory factory : factories) {

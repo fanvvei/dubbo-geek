@@ -28,6 +28,7 @@ import java.util.regex.Pattern;
  */
 public class JavassistCompiler extends AbstractCompiler {
 
+    //以下的正则表达式都是在匹配对应的java代码。JavassistCompiler这个编译器是通过创建类然后写
     private static final Pattern IMPORT_PATTERN = Pattern.compile("import\\s+([\\w\\.\\*]+);\n");
 
     private static final Pattern EXTENDS_PATTERN = Pattern.compile("\\s+extends\\s+([\\w\\.]+)[^\\{]*\\{\n");

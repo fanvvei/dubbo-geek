@@ -96,17 +96,24 @@ public class ExtensionLoader<T> {
     private final ExtensionFactory objectFactory;
 
     // 缓存了该 ExtensionLoader 加载的扩展实现类与扩展名之间的映射关系。
+    // SRLJ：的说法，是扩展类和扩展名缓存
     private final ConcurrentMap<Class<?>, String> cachedNames = new ConcurrentHashMap<>();
 
+    //说人话：普通扩展类缓存，不包括自适应拓展类和Wrapper类
     //缓存了该 ExtensionLoader 加载的扩展名与扩展实现类之间的映射关系。cachedNames 集合的反向关系缓存。
     private final Holder<Map<String, Class<?>>> cachedClasses = new Holder<>();
 
+    //SRLJ:键为扩展名，值为Adaptive注解
     //键为类简单名，值为@Activate注解对象，确实上一层那里还是扩展实现类的class对象，然后getAnnotation了
     private final Map<String, Object> cachedActivates = new ConcurrentHashMap<>();
 
     // 缓存了该 ExtensionLoader 加载的扩展名与扩展实现对象之间的映射关系。
     private final ConcurrentMap<String, Holder<Object>> cachedInstances = new ConcurrentHashMap<>();
+
+    //根据下面的说法，这里也是必定只有一个
     private final Holder<Object> cachedAdaptiveInstance = new Holder<>();
+
+    //自适应扩展类缓存。为什么就一个？因为ExtensionLoader<T>是有泛型的，根据这个泛型只有一个自适应实现类，比如注册中心只能有一个叫zk的
     private volatile Class<?> cachedAdaptiveClass = null;
 
     // 记录了 type 这个扩展接口上 @SPI 注解的 value 值，也就是默认扩展名
@@ -114,6 +121,7 @@ public class ExtensionLoader<T> {
 
     private volatile Throwable createAdaptiveInstanceError;
 
+    //Wrapper类缓存
     private Set<Class<?>> cachedWrapperClasses;
 
     private Map<String, IllegalStateException> exceptions = new ConcurrentHashMap<>();
@@ -131,7 +139,7 @@ public class ExtensionLoader<T> {
 
     /**
      * Load all {@link Prioritized prioritized} {@link LoadingStrategy Loading Strategies} via {@link ServiceLoader}
-     *
+     * 这里代码有点看不懂，load(LoadingStrategy.class)是调用java-spi，后面有个split啥意思，分成列表了吗？
      * @return non-null
      * @since 2.7.7
      */
@@ -263,6 +271,7 @@ public class ExtensionLoader<T> {
 
     /**
      * Get activate extensions.
+     * 这个方法与getExtension有很多的重合，这个方法的意思是根据不同条件同时激活多个普通扩展类
      *
      * @param url    url
      * @param values extension point names
@@ -426,13 +435,15 @@ public class ExtensionLoader<T> {
     /**
      * Find the extension with the given name. If the specified name is not found, then {@link IllegalStateException}
      * will be thrown.
+     *
+     * 这里的name，比如我写的impl，就会在这里
      */
     @SuppressWarnings("unchecked")
     public T getExtension(String name) {
         if (StringUtils.isEmpty(name)) {
             throw new IllegalArgumentException("Extension name == null");
         }
-        if ("true".equals(name)) {
+        if ("true".equals(name)) {//如果传入true，会加载一个默认Extension
             return getDefaultExtension();
         }
         // getOrCreateHolder()方法中封装了查找cachedInstances缓存的逻辑
@@ -706,13 +717,13 @@ public class ExtensionLoader<T> {
                 if (method.getAnnotation(DisableInject.class) != null) {
                     continue; // 如果方法上明确标注了@DisableInject注解，忽略该方法
                 }
-                Class<?> pt = method.getParameterTypes()[0];
+                Class<?> pt = method.getParameterTypes()[0];//得到参数类型，理论上就找第一个参数
                 if (ReflectUtils.isPrimitives(pt)) {
                     continue; // 如果参数为简单类型，忽略该setter方法(略)
                 }
 
                 try {
-                    // 根据setter方法的名称确定属性名称
+                    // 根据setter方法的名称确定属性名称，这里是截取名字，比如setTestService就截取testService
                     String property = getSetterProperty(method);
                     // 加载并实例化扩展实现类
                     // 这里是自动装配，感觉有点像spring的自动装配了，例如在创建ABean的时候发现需要BBean，而且缓存里面没有BBean，那么我
@@ -798,6 +809,8 @@ public class ExtensionLoader<T> {
 
         Map<String, Class<?>> extensionClasses = new HashMap<>();
 
+        //EchoService也调了6次后来想想，是因为这里3个策略，每个策略调2次，所以是6次。调六次并不是要生成6个扩展，而是不放过任何一个扩展。
+        //遇到不符合的加载，hasMoreElements返回都是false直接跳过循环。只有真正符合策略的，才会进入loadResource，才会解析等号什么的。
         for (LoadingStrategy strategy : strategies) {
             loadDirectory(extensionClasses, strategy.directory(), type.getName(), strategy.preferExtensionClassLoader(), strategy.overridden(), strategy.excludedPackages());
             loadDirectory(extensionClasses, strategy.directory(), type.getName().replace("org.apache", "com.alibaba"), strategy.preferExtensionClassLoader(), strategy.overridden(), strategy.excludedPackages());
@@ -856,6 +869,7 @@ public class ExtensionLoader<T> {
             }
 
             if (urls != null) {
+                //我发现是urls每次调用hasMoreElements方法才会有新东西加入。
                 while (urls.hasMoreElements()) {
                     java.net.URL resourceURL = urls.nextElement();
                     loadResource(extensionClasses, classLoader, resourceURL, overridden, excludedPackages);
@@ -867,13 +881,16 @@ public class ExtensionLoader<T> {
         }
     }
 
+    // 然后进了loadResource，读文件，利用URL来openStream来读字节流，并采用等号分割
+    // 左边是我们那个SPI注解里的名称，右边是实现类全限定名
+    // 第一个来的是url=file:/D:/gitee/dubbo-geek/dubbo-config/dubbo-config-spring/target/classes/META-INF/dubbo/internal/org.apache.dubbo.common.extension.ExtensionFactory
     private void loadResource(Map<String, Class<?>> extensionClasses, ClassLoader classLoader,
                               java.net.URL resourceURL, boolean overridden, String... excludedPackages) {
         try {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(resourceURL.openStream(), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    final int ci = line.indexOf('#');
+                    final int ci = line.indexOf('#');//用#号作为结束
                     if (ci >= 0) {
                         line = line.substring(0, ci);
                     }
@@ -923,12 +940,13 @@ public class ExtensionLoader<T> {
 
         if (clazz.isAnnotationPresent(Adaptive.class)) {
             // 缓存到cachedAdaptiveClass字段
+            // 自适应只能有一个，所以必定设置一个，如果多了会报错
             cacheAdaptiveClass(clazz, overridden);
         } else if (isWrapperClass(clazz)) { // --1
             // 1.在 isWrapperClass() 方法中，会判断该扩展实现类是否包含拷贝构造函数
             // （即构造函数只有一个参数且为扩展接口类型），如果包含，则为 Wrapper 类，这就是判断 Wrapper 类的标准。
 
-            // 2.将 Wrapper 类记录到 cachedWrapperClasses（Set<Class<?>>类型）这个实例字段中进行缓存。
+            // 2.将 Wrapper 类记录到 cachedWrapperClasses（Set<Class<?>>类型）这个实例字段中进行缓存。这个可以多个
             cacheWrapperClass(clazz); // ---2
         } else {
             clazz.getConstructor(); // 扩展实现类必须有无参构造函数
@@ -1073,9 +1091,14 @@ public class ExtensionLoader<T> {
     }
 
     private Class<?> createAdaptiveExtensionClass() {
+        //在这一步就得到了SimpleAdapt$Adaptive这个动态生成的类
+        //type = "interface org.fan.dds.service.SimpleAdapt"
+        //cachedDefaultName = simple，就是你写的SPI里面注解的值
         String code = new AdaptiveClassCodeGenerator(type, cachedDefaultName).generate();
         ClassLoader classLoader = findClassLoader();
+        //这一步是要拿到对应的扩展，是先去了AdaptiveCompiler，然后在那里调用，默认就是javassist，
         org.apache.dubbo.common.compiler.Compiler compiler = ExtensionLoader.getExtensionLoader(org.apache.dubbo.common.compiler.Compiler.class).getAdaptiveExtension();
+        //没啥好怀疑的，compiler就是AdaptiveCompiler类型的。
         return compiler.compile(code, classLoader);
     }
 

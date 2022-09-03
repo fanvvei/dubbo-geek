@@ -49,6 +49,12 @@ public abstract class AbstractCompiler implements Compiler {
         }
         String className = pkg != null && pkg.length() > 0 ? pkg + "." + cls : cls;
         try {
+            //尝试通过forName来加载类，这里设置了true是要实例化的。言下之意先去检查有没有，如果没有再去调用doCompile编译，如果有就不编译了。
+            //forName的官方注释：【使用给定的类加载器返回与具有给定字符串名称的类或接口关联的Class对象。给定类或接口的完全限定名称（与getName返回的格式相同），
+            // 此方法尝试定位、加载和链接类或接口。指定的类加载器用于加载类或接口。如果参数loader为空，则通过引导类加载器加载该类。
+            // 仅当initialize参数为true且之前未初始化时，才会初始化该类。
+            // 如果name表示原始类型或 void，将尝试在名称为name的未命名包中查找用户定义的类。因此，此方法不能用于获取任何表示原始类型或 void 的Class对象。
+            // 如果name表示一个数组类，则数组类的组件类型被加载但不被初始化。】
             return Class.forName(className, true, org.apache.dubbo.common.utils.ClassUtils.getCallerClassLoader(getClass()));
         } catch (ClassNotFoundException e) {
             if (!code.endsWith("}")) {

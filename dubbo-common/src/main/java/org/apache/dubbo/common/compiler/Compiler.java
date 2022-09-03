@@ -19,6 +19,7 @@ package org.apache.dubbo.common.compiler;
 import org.apache.dubbo.common.extension.SPI;
 
 /**
+ * 编译的默认扩展是javassist，如果要修改就用<dubbo:application compiler="jdk"/>
  * Compiler. (SPI, Singleton, ThreadSafe)
  */
 @SPI("javassist")

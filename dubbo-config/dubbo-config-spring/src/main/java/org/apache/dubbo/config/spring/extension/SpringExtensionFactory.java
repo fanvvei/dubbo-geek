@@ -34,8 +34,11 @@ import java.util.Set;
 public class SpringExtensionFactory implements ExtensionFactory {
     private static final Logger logger = LoggerFactory.getLogger(SpringExtensionFactory.class);
 
+    //用set来保存上下文
     private static final Set<ApplicationContext> CONTEXTS = new ConcurrentHashSet<ApplicationContext>();
 
+    //每次创建ReferenceBean和ServiceBean的时候,以及一个ConfigCenterBean的时候，会设置这个上下文。
+    //应该记得吧,我调用API的时候确实要设置上下文.是在这里用的吗?
     public static void addApplicationContext(ApplicationContext context) {
         CONTEXTS.add(context);
         if (context instanceof ConfigurableApplicationContext) {
@@ -68,6 +71,7 @@ public class SpringExtensionFactory implements ExtensionFactory {
 
         // 从Spring容器中查找Bean
         for (ApplicationContext context : CONTEXTS) {
+            //这里面是alibaba提供的开源库,来操作spring的bean.
             T bean = BeanFactoryUtils.getOptionalBean(context, name, type);
             if (bean != null) {
                 return bean;
